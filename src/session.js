@@ -167,7 +167,31 @@ async function handleMessage(phone, rawText) {
         session.training = key;
         return exerciseListText(key);
       }
-      // Qualquer mensagem não reconhecida no início da conversa vira uma saudação,
+
+      // Uma resposta negativa à saudação encerra e registra o dia sem treino,
+      // seja porque era dia de descanso ou porque o treino programado foi pulado.
+      if (["nao", "não", "n"].includes(lower)) {
+        const diaKey = diaDeHoje();
+        const trainingKeyHoje = agenda[diaKey];
+        const now = new Date();
+        const dataStr = now.toLocaleDateString("pt-BR");
+        const horaStr = now.toLocaleTimeString("pt-BR");
+
+        if (trainingKeyHoje) {
+          // Era dia de treino programado, mas não foi realizado
+          const nomeTreino = workouts[trainingKeyHoje].nome;
+          await appendSet(weekLabel, [dataStr, horaStr, nomeTreino, "Não realizado", "-", "-", "-", "-"]);
+          resetSession(phone);
+          return "Tudo bem, Raquel! Vou registrar que o treino de hoje não foi realizado. Nos vemos no próximo! 💪";
+        }
+
+        // Era dia de descanso mesmo
+        await appendSet(weekLabel, [dataStr, horaStr, "Descanso", "-", "-", "-", "-", "-"]);
+        resetSession(phone);
+        return "Ok! Sem treinos hoje, vamos descansar. Vejo você amanhã! 💤";
+      }
+
+      // Qualquer outra mensagem não reconhecida no início da conversa vira uma saudação,
       // em vez de um "não entendi" seco.
       return greetingText();
     }
