@@ -167,7 +167,9 @@ async function handleMessage(phone, rawText) {
         session.training = key;
         return exerciseListText(key);
       }
-      return "Não entendi 🤔. Envie *menu* para ver as opções de treino ou *ajuda* para ver os comandos.";
+      // Qualquer mensagem não reconhecida no início da conversa vira uma saudação,
+      // em vez de um "não entendi" seco.
+      return greetingText();
     }
 
     case "EXERCISE_LIST": {
