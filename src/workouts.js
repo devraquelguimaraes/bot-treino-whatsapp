@@ -1,67 +1,105 @@
-// Estrutura extraída do protocolo "Raquel Todescatto (8 semanas)"
-// Cada exercício segue: 1 série de 15 (aquecimento) + 2 séries (feeder + top-set)
+// Estrutura extraída do novo protocolo de treino
+// Divisão: UPPER 2x / LOWER 3x
+
+// Qual treino cai em cada dia da semana (chave = valor do JS Date().getDay())
+// 0=domingo, 1=segunda, 2=terça, 3=quarta, 4=quinta, 5=sexta, 6=sábado
+const diasSemana = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
+const diasSemanaDisplay = {
+  domingo: "domingo",
+  segunda: "segunda-feira",
+  terca: "terça-feira",
+  quarta: "quarta-feira",
+  quinta: "quinta-feira",
+  sexta: "sexta-feira",
+  sabado: "sábado",
+};
+
+// null = dia de descanso, sem treino programado
+const agenda = {
+  domingo: null,
+  segunda: "A",
+  terca: "B",
+  quarta: "C",
+  quinta: null,
+  sexta: "D",
+  sabado: "E",
+};
 
 const workouts = {
   A: {
     nome: "Treino A - LOWER 1",
+    tipo: "Loading Sets",
     exercicios: [
-      { nome: "Cadeira Abdutora", alvo: "1x15 + 2x5-9", obs: "Back Off Set" },
-      { nome: "Front Squat", alvo: "1x15 + 2x5-9", obs: "" },
-      { nome: "Bulgaro H", alvo: "1x15 + 2x5-9", obs: "" },
-      { nome: "Leg Press 45°", alvo: "1x15 + 2x5-9", obs: "Back Off Set" },
-      { nome: "Flexora Vertical", alvo: "1x15 + 2x5-9", obs: "" },
-      { nome: "Elevação Pélvica uni H", alvo: "1x15 + 2x10-15", obs: "" },
-      { nome: "Abdução cabo por trás", alvo: "1x15 + 2x10-15", obs: "Back Off Set" },
+      { nome: "Cadeira Adutora", reps: "5 a 9", obs: "" },
+      { nome: "Abdução cabo por trás", reps: "10 a 15", obs: "" },
+      { nome: "RDL", reps: "5 a 9", obs: "" },
+      { nome: "Cadeira Flexora", reps: "5 a 9", obs: "" },
+      { nome: "Front Squat", reps: "5 a 9", obs: "" },
+      { nome: "Elevação Pélvica Máquina", reps: "5 a 9", obs: "" },
+      { nome: "DC Strech Sissy Quads", reps: "2x 1 min", obs: "Alongamento" },
     ],
   },
   B: {
     nome: "Treino B - UPPER 1",
+    tipo: "Loading Sets",
     exercicios: [
-      { nome: "Remada Baixa triângulo", alvo: "1x15 + 2x5-9", obs: "" },
-      { nome: "Remada Articulada neutra bilateral", alvo: "1x15 + 2x5-9", obs: "Back Off Set" },
-      { nome: "Puxada Alta supinada", alvo: "1x15 + 2x5-9", obs: "Back Off Set" },
-      { nome: "Desenvolvimento H", alvo: "1x15 + 2x5-9", obs: "" },
-      { nome: "Elevação Lateral H", alvo: "1x15 + 2x10-15", obs: "Back Off Set" },
-      { nome: "Elevação Frontal H c/ rotação bilateral", alvo: "1x15 + 2x10-15", obs: "Back Off Set" },
-      { nome: "Triceps Francês Máquina", alvo: "1x15 + 2x5-9", obs: "" },
+      { nome: "Remada Baixa Triângulo", reps: "5 a 9", obs: "" },
+      { nome: "Puxada Alta Supinada", reps: "5 a 9", obs: "" },
+      { nome: "Remada Diagonal Polia", reps: "5 a 9", obs: "" },
+      { nome: "Desenvolvimento H Neutro 70°", reps: "5 a 9", obs: "" },
+      { nome: "Elevação Frontal H Bilateral", reps: "5 a 9", obs: "" },
+      { nome: "Triceps Pulley", reps: "5 a 9", obs: "" },
+      { nome: "Crunch Polia de Joelhos", reps: "10 a 15", obs: "" },
     ],
   },
   C: {
     nome: "Treino C - LOWER 2",
+    tipo: "Muscle Round",
     exercicios: [
-      { nome: "Cadeira Abdutora c/ flex. de quadril", alvo: "1x15 + 2x5-9", obs: "Back Off Set" },
-      { nome: "Deadlift Sumo", alvo: "1x15 + 2x5-9", obs: "" },
-      { nome: "Cadeira Flexora", alvo: "1x15 + 2x5-9", obs: "Back Off Set" },
-      { nome: "Hack Linear", alvo: "1x15 + 2x5-9", obs: "" },
-      { nome: "Elevação Pélvica Máquina", alvo: "1x15 + 2x5-9", obs: "Back Off Set" },
-      { nome: "Abdução cabo frente", alvo: "1x15 + 2x10-15", obs: "" },
-      { nome: "Sóleo banco", alvo: "1x15 + 2x5-9", obs: "" },
+      { nome: "Cadeira Abdutora", reps: "8 a 12", obs: "" },
+      { nome: "Mesa Flexora", reps: "8 a 12", obs: "" },
+      { nome: "Deadlift Sumo", reps: "8 a 12", obs: "" },
+      { nome: "Leg Press 45°", reps: "8 a 12", obs: "" },
+      { nome: "Cadeira Extensora", reps: "8 a 12", obs: "" },
+      { nome: "Sóleo Banco", reps: "8 a 12", obs: "" },
+      { nome: "DC Strech Sissy Quads", reps: "2x 1 min", obs: "Alongamento" },
     ],
   },
   D: {
     nome: "Treino D - UPPER 2",
+    tipo: "Muscle Round",
     exercicios: [
-      { nome: "Remada Baixa aberta", alvo: "1x15 + 2x5-9", obs: "" },
-      { nome: "Puxada Alta triângulo", alvo: "1x15 + 2x5-9", obs: "Back Off Set" },
-      { nome: "Pulldown Corda", alvo: "1x15 + 2x10-15", obs: "Back Off Set" },
-      { nome: "Shoulder Press", alvo: "1x15 + 2x5-9", obs: "" },
-      { nome: "Elevação Lateral polia média", alvo: "1x15 + 2x10-15", obs: "" },
-      { nome: "Elevação Frontal corda", alvo: "1x15 + 2x10-15", obs: "Back Off Set" },
-      { nome: "Triceps Testa Máquina", alvo: "1x15 + 2x5-9", obs: "" },
+      { nome: "Remada Curvada Guiada", reps: "8 a 12", obs: "" },
+      { nome: "Puxada Alta Pronada", reps: "8 a 12", obs: "" },
+      { nome: "Pull Down Corda", reps: "8 a 12", obs: "" },
+      { nome: "Desenvolvimento Smith 70°", reps: "8 a 12", obs: "" },
+      { nome: "Elevação Lateral H", reps: "8 a 12", obs: "" },
+      { nome: "Elevação Frontal Corda", reps: "8 a 12", obs: "" },
+      { nome: "Crunch Banco Declinado H", reps: "8 a 12", obs: "" },
     ],
   },
   E: {
     nome: "Treino E - LOWER 3",
+    tipo: "Loading Sets",
     exercicios: [
-      { nome: "Cadeira Abdutora 45°", alvo: "1x15 + 2x5-9", obs: "Back Off Set" },
-      { nome: "Cadeira Adutora", alvo: "1x15 + 2x5-9", obs: "Back Off Set" },
-      { nome: "Deep Squat Smith", alvo: "1x15 + 2x5-9", obs: "" },
-      { nome: "Leg Press horizontal uni", alvo: "1x15 + 2x5-9", obs: "" },
-      { nome: "Pendulum Squat", alvo: "1x15 + 2x10-15", obs: "" },
-      { nome: "Mesa Flexora", alvo: "1x15 + 2x5-9", obs: "Back Off Set" },
-      { nome: "Cadeira Extensora", alvo: "1x15 + 2x5-9", obs: "Back Off Set" },
+      { nome: "Cadeira Abdutora c/ Flexão de Quadril", reps: "5 a 9", obs: "" },
+      { nome: "Flexora Vertical", reps: "5 a 9", obs: "" },
+      { nome: "Abdução Cabo Frente", reps: "5 a 9", obs: "" },
+      { nome: "Bulgaro H", reps: "5 a 9", obs: "" },
+      { nome: "Gêmeos Hack Linear", reps: "5 a 9", obs: "" },
+      { nome: "DC Strech DB RDL", reps: "2x 1 min", obs: "Alongamento" },
+      { nome: "DC Strech Sissy Quads", reps: "2x 1 min", obs: "Alongamento" },
     ],
   },
 };
 
-module.exports = workouts;
+// Como executar cada tipo de periodização (varia entre semana 1-4 e 5-8)
+function periodizacaoText(trainingKey) {
+  const t = workouts[trainingKey];
+  if (t.tipo === "Loading Sets") {
+    return "1 Warm Up + 1 a 2 Feeder Set + 1 Top Set (semanas 1-4) ou 2 Top Set (semanas 5-8)";
+  }
+  return "1 Warm Up + 1 a 2 Feeder Set + 1 Muscle Round, até o bloco de falha (6 blocos de 4 reps, 10s de descanso)";
+}
+
+module.exports = { workouts, agenda, diasSemana, diasSemanaDisplay, periodizacaoText };

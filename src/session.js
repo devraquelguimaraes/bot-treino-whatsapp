@@ -1,6 +1,8 @@
-const workouts = require("./workouts");
+const { workouts, agenda, diasSemana, diasSemanaDisplay, periodizacaoText } = require("./workouts");
 const { appendSet, getLastRows } = require("./sheets");
 const { computeWeekLabel } = require("./utils");
+
+const NOME_USUARIA = "Raquel";
 
 // Estado de conversa por número de telefone (em memória)
 const sessions = new Map();
@@ -22,15 +24,31 @@ const HELP_TEXT =
   "- *resumo*: ver últimas séries registradas nesta semana\n" +
   "- *proximo*: ir para o próximo exercício\n" +
   "- *voltar*: voltar para a lista de exercícios\n" +
-  "- *fim*: encerrar o registro do treino\n" +
+  "- *fim*: encerrar o registro do treino (vou perguntar sobre o cardio antes)\n" +
   "- *ajuda*: ver esta mensagem\n\n" +
   "Para registrar uma série, envie:\n" +
   "`<tipo> <reps> <carga> <falhou?>`\n" +
-  "tipo = warmup / feeder / topset\n" +
+  "tipo = warmup / feeder / topset / muscleround\n" +
   "Exemplo: `topset 8 40kg nao`";
 
-function trainingMenuText() {
-  let text = "💪 Escolha o treino de hoje:\n\n";
+function diaDeHoje() {
+  const idx = new Date().getDay();
+  return diasSemana[idx];
+}
+
+function greetingText() {
+  const diaKey = diaDeHoje();
+  const diaDisplay = diasSemanaDisplay[diaKey];
+  const trainingKey = agenda[diaKey];
+
+  let intro = `Olá, ${NOME_USUARIA}! Eu sou o Friday, seu assistente de treino. Hoje é ${diaDisplay}.`;
+  if (trainingKey) {
+    intro += ` Você fará o ${workouts[trainingKey].nome}? Ou prefere outro treino?`;
+  } else {
+    intro += " Hoje é dia de descanso na sua programação. Quer registrar algum treino mesmo assim?";
+  }
+
+  let text = intro + "\n\n";
   for (const key of Object.keys(workouts)) {
     text += `*${key}* - ${workouts[key].nome}\n`;
   }
@@ -40,10 +58,10 @@ function trainingMenuText() {
 
 function exerciseListText(trainingKey) {
   const t = workouts[trainingKey];
-  let text = `📋 *${t.nome}*\n\n`;
+  let text = `📋 *${t.nome}* — _${t.tipo}_\n${periodizacaoText(trainingKey)}\n\n`;
   t.exercicios.forEach((ex, i) => {
     const obs = ex.obs ? ` _(${ex.obs})_` : "";
-    text += `${i + 1}. ${ex.nome} — ${ex.alvo}${obs}\n`;
+    text += `${i + 1}. ${ex.nome} — ${ex.reps} reps${obs}\n`;
   });
   text += "\nEnvie o número do exercício para começar a registrar as séries.";
   return text;
@@ -64,6 +82,9 @@ function parseSetMessage(text) {
     "top-set": "Top-set",
     top: "Top-set",
     ts: "Top-set",
+    muscleround: "Muscle Round",
+    "muscle-round": "Muscle Round",
+    mr: "Muscle Round",
   };
   const tipo = tipoMap[parts[0]];
   if (!tipo) return null;
@@ -82,6 +103,19 @@ function parseSetMessage(text) {
   return { tipo, reps, carga, falhou };
 }
 
+function parseCardioMessage(text) {
+  // formato esperado: <modalidade> <tempo>min  (ex: "esteira 40min", "bike 30 min")
+  const match = text.trim().match(/^(.*?)(\d+)\s*min(uto)?s?$/i);
+  if (!match) return null;
+  const modalidade = match[1].trim();
+  if (!modalidade) return null;
+  const minutos = match[2];
+  return {
+    modalidade: modalidade.charAt(0).toUpperCase() + modalidade.slice(1),
+    tempo: `${minutos} min`,
+  };
+}
+
 async function handleMessage(phone, rawText) {
   const text = (rawText || "").trim();
   const lower = text.toLowerCase();
@@ -95,7 +129,7 @@ async function handleMessage(phone, rawText) {
   }
   if (["menu", "treino", "oi", "ola", "olá", "start"].includes(lower)) {
     resetSession(phone);
-    return trainingMenuText();
+    return greetingText();
   }
   if (lower === "resumo") {
     const rows = await getLastRows(weekLabel, 5);
@@ -113,11 +147,16 @@ async function handleMessage(phone, rawText) {
       return exerciseListText(session.training);
     }
     resetSession(phone);
-    return trainingMenuText();
+    return greetingText();
   }
   if (lower === "fim") {
+    // Se estava no meio de um treino (e ainda não perguntamos sobre cardio), pergunta antes de encerrar
+    if (session.training && session.state !== "CARDIO_ASK" && session.state !== "CARDIO_DETAILS") {
+      session.state = "CARDIO_ASK";
+      return "Antes de encerrar: você fez cardio hoje? (sim/nao)";
+    }
     resetSession(phone);
-    return "✅ Treino encerrado. Envie *menu* quando quiser registrar outro treino.";
+    return "✅ Treino encerrado. Envie *menu* quando quiser começar outro treino.";
   }
 
   switch (session.state) {
@@ -139,10 +178,10 @@ async function handleMessage(phone, rawText) {
         session.exerciseIndex = num - 1;
         const ex = t.exercicios[num - 1];
         return (
-          `✏️ Registrando: *${ex.nome}* (${ex.alvo})\n\n` +
+          `✏️ Registrando: *${ex.nome}* (${ex.reps} reps)\n\n` +
           "Envie os dados da série no formato:\n" +
           "`<tipo> <reps> <carga> <falhou?>`\n" +
-          "tipo = warmup / feeder / topset\n" +
+          "tipo = warmup / feeder / topset / muscleround\n" +
           "Exemplo: `topset 8 40kg nao`"
         );
       }
@@ -190,9 +229,50 @@ async function handleMessage(phone, rawText) {
       );
     }
 
+    case "CARDIO_ASK": {
+      if (["sim", "s"].includes(lower)) {
+        session.state = "CARDIO_DETAILS";
+        return "Legal! Me conta a modalidade e o tempo, no formato:\n`<modalidade> <tempo>min`\nExemplo: `esteira 40min` ou `bike 30min`";
+      }
+      if (["nao", "não", "n"].includes(lower)) {
+        resetSession(phone);
+        return "✅ Treino encerrado. Envie *menu* quando quiser começar outro treino.";
+      }
+      return "Não entendi 🤔. Você fez cardio hoje? Responda *sim* ou *nao*.";
+    }
+
+    case "CARDIO_DETAILS": {
+      const parsedCardio = parseCardioMessage(text);
+      if (!parsedCardio) {
+        return "Não entendi o formato 😕. Envie assim: `esteira 40min` (modalidade + tempo em minutos).";
+      }
+
+      const t = workouts[session.training];
+      const now = new Date();
+      const dataStr = now.toLocaleDateString("pt-BR");
+      const horaStr = now.toLocaleTimeString("pt-BR");
+
+      await appendSet(weekLabel, [
+        dataStr,
+        horaStr,
+        t.nome,
+        "Cardio",
+        parsedCardio.modalidade,
+        "-",
+        parsedCardio.tempo,
+        "-",
+      ]);
+
+      resetSession(phone);
+      return (
+        `✅ Cardio registrado: ${parsedCardio.modalidade} — ${parsedCardio.tempo}\n\n` +
+        "Treino encerrado. Envie *menu* quando quiser começar outro treino."
+      );
+    }
+
     default:
       resetSession(phone);
-      return trainingMenuText();
+      return greetingText();
   }
 }
 
