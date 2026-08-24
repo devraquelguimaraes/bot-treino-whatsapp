@@ -1,4 +1,4 @@
-// Estrutura extraída do novo protocolo de treino
+// Estrutura extraída do protocolo de treino
 // Divisão: UPPER 2x / LOWER 3x
 
 // Qual treino cai em cada dia da semana (chave = valor do JS Date().getDay())
@@ -93,11 +93,15 @@ const workouts = {
   },
 };
 
-// Como executar cada tipo de periodização (varia entre semana 1-4 e 5-8)
-function periodizacaoText(trainingKey) {
+// Como executar o treino NESTA semana específica (muda entre semana 1-4 e 5-8)
+function periodizacaoText(trainingKey, weekNumber) {
   const t = workouts[trainingKey];
   if (t.tipo === "Loading Sets") {
-    return "1 Warm Up + 1 a 2 Feeder Set + 1 Top Set (semanas 1-4) ou 2 Top Set (semanas 5-8)";
+    const fase =
+      weekNumber <= 4
+        ? "1 Top Set (Fase 1 · semanas 1-4)"
+        : "2 Top Set (Fase 2 · semanas 5-8)";
+    return `1 Warm Up + 1 a 2 Feeder Set + ${fase}`;
   }
   return "1 Warm Up + 1 a 2 Feeder Set + 1 Muscle Round, até o bloco de falha (6 blocos de 4 reps, 10s de descanso)";
 }

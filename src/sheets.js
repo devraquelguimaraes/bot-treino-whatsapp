@@ -1,4 +1,5 @@
 const { google } = require("googleapis");
+const { parseDataHora } = require("./utils");
 
 const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID;
 
@@ -62,4 +63,37 @@ async function getLastRows(weekLabel, n = 5) {
   return rows.slice(-n);
 }
 
-module.exports = { appendSet, getLastRows };
+// Varre todas as abas "Semana N" já existentes procurando a última vez que
+// esse exercício foi registrado, para lembrar a carga usada.
+async function getLastLoadForExercise(exerciseName) {
+  const sheets = await getSheetsClient();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+  const weekSheetTitles = meta.data.sheets
+    .map((s) => s.properties.title)
+    .filter((title) => /^Semana \d+$/.test(title));
+
+  const candidatos = [];
+
+  for (const title of weekSheetTitles) {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${title}!A2:H`,
+    });
+    const rows = res.data.values || [];
+    rows.forEach((r) => {
+      if (r[3] === exerciseName) {
+        candidatos.push({ data: r[0], hora: r[1], tipo: r[4], reps: r[5], carga: r[6] });
+      }
+    });
+  }
+
+  if (candidatos.length === 0) return null;
+
+  candidatos.sort((a, b) => parseDataHora(b.data, b.hora) - parseDataHora(a.data, a.hora));
+
+  // Prioriza a última Top-set/Muscle Round (a carga "de verdade"), senão pega o mais recente
+  const melhor = candidatos.find((c) => c.tipo === "Top-set" || c.tipo === "Muscle Round");
+  return melhor || candidatos[0];
+}
+
+module.exports = { appendSet, getLastRows, getLastLoadForExercise };

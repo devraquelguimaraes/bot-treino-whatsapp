@@ -1,6 +1,6 @@
 const { workouts, agenda, diasSemana, diasSemanaDisplay, periodizacaoText } = require("./workouts");
-const { appendSet, getLastRows } = require("./sheets");
-const { computeWeekLabel } = require("./utils");
+const { appendSet, getLastRows, getLastLoadForExercise } = require("./sheets");
+const { computeWeekNumber } = require("./utils");
 
 const NOME_USUARIA = "Raquel";
 
@@ -9,13 +9,25 @@ const sessions = new Map();
 
 function getSession(phone) {
   if (!sessions.has(phone)) {
-    sessions.set(phone, { state: "IDLE", training: null, exerciseIndex: null });
+    sessions.set(phone, {
+      state: "IDLE",
+      training: null,
+      exerciseIndex: null,
+      exerciseLoads: [], // cargas já registradas no exercício atual, nesta sessão
+      pendingSet: null, // série aguardando confirmação de carga
+    });
   }
   return sessions.get(phone);
 }
 
 function resetSession(phone) {
-  sessions.set(phone, { state: "IDLE", training: null, exerciseIndex: null });
+  sessions.set(phone, {
+    state: "IDLE",
+    training: null,
+    exerciseIndex: null,
+    exerciseLoads: [],
+    pendingSet: null,
+  });
 }
 
 const HELP_TEXT =
@@ -29,7 +41,9 @@ const HELP_TEXT =
   "Para registrar uma série, envie:\n" +
   "`<tipo> <reps> <carga> <falhou?>`\n" +
   "tipo = warmup / feeder / topset / muscleround\n" +
-  "Exemplo: `topset 8 40kg nao`";
+  "Exemplo: `topset 8 40kg nao`\n\n" +
+  "💡 Ao escolher um exercício, eu lembro qual foi a última carga usada nele. " +
+  "E se uma feeder/top-set vier com carga menor que a série anterior, eu confirmo com você antes de salvar.";
 
 function diaDeHoje() {
   const idx = new Date().getDay();
@@ -56,9 +70,21 @@ function greetingText() {
   return text;
 }
 
-function exerciseListText(trainingKey) {
+// Versão curta, sem repetir a saudação inteira — usada quando a pessoa já respondeu "sim"/"não"
+function trainingListOnlyText() {
+  let text = "Beleza! Qual treino você quer registrar?\n\n";
+  for (const key of Object.keys(workouts)) {
+    text += `*${key}* - ${workouts[key].nome}\n`;
+  }
+  text += "\nResponda com a letra do treino (ex: A). Digite *ajuda* a qualquer momento para ver os comandos.";
+  return text;
+}
+
+function exerciseListText(trainingKey, weekNumber) {
   const t = workouts[trainingKey];
-  let text = `📋 *${t.nome}* — _${t.tipo}_\n${periodizacaoText(trainingKey)}\n\n`;
+  let text =
+    `📋 *${t.nome}* — _${t.tipo}_ (Semana ${weekNumber})\n` +
+    `${periodizacaoText(trainingKey, weekNumber)}\n\n`;
   t.exercicios.forEach((ex, i) => {
     const obs = ex.obs ? ` _(${ex.obs})_` : "";
     text += `${i + 1}. ${ex.nome} — ${ex.reps} reps${obs}\n`;
@@ -116,18 +142,55 @@ function parseCardioMessage(text) {
   };
 }
 
+// Extrai o número de uma string tipo "40kg", "40 kg", "40" -> 40
+function extractNumeric(cargaStr) {
+  const match = (cargaStr || "").match(/(\d+(\.\d+)?)/);
+  return match ? parseFloat(match[1]) : null;
+}
+
+// Salva a série na planilha e atualiza o histórico de cargas desta sessão
+async function saveSet(session, weekLabel, t, ex, parsed, cargaNum) {
+  const now = new Date();
+  const dataStr = now.toLocaleDateString("pt-BR");
+  const horaStr = now.toLocaleTimeString("pt-BR");
+
+  await appendSet(weekLabel, [
+    dataStr,
+    horaStr,
+    t.nome,
+    ex.nome,
+    parsed.tipo,
+    parsed.reps,
+    parsed.carga,
+    parsed.falhou,
+  ]);
+
+  if (cargaNum !== null) {
+    session.exerciseLoads.push({ tipo: parsed.tipo, carga: cargaNum });
+  }
+
+  return (
+    `✅ Registrado: *${ex.nome}*\n` +
+    `${parsed.tipo} | ${parsed.reps} reps | ${parsed.carga} | Falhou: ${parsed.falhou}\n\n` +
+    "Pode enviar a próxima série, ou *proximo* para o próximo exercício, ou *fim* para encerrar."
+  );
+}
+
 async function handleMessage(phone, rawText) {
   const text = (rawText || "").trim();
-  const lower = text.toLowerCase();
+  // remove pontuação final (!, ., ?, etc) antes de comparar com os comandos,
+  // assim "sim!", "não." ou "menu?" também são reconhecidos
+  const lower = text.toLowerCase().replace(/[!.,;:?]+$/g, "").trim();
   const session = getSession(phone);
   const startDate = process.env.PROGRAM_START_DATE;
-  const weekLabel = computeWeekLabel(startDate);
+  const weekNumber = computeWeekNumber(startDate);
+  const weekLabel = `Semana ${weekNumber}`;
 
   // Comandos globais, funcionam em qualquer estado
   if (["ajuda", "help"].includes(lower)) {
     return HELP_TEXT;
   }
-  if (["menu", "treino", "oi", "ola", "olá", "start"].includes(lower)) {
+  if (["menu", "treino", "start"].includes(lower)) {
     resetSession(phone);
     return greetingText();
   }
@@ -144,7 +207,7 @@ async function handleMessage(phone, rawText) {
     if (session.training) {
       session.state = "EXERCISE_LIST";
       session.exerciseIndex = null;
-      return exerciseListText(session.training);
+      return exerciseListText(session.training, weekNumber);
     }
     resetSession(phone);
     return greetingText();
@@ -165,34 +228,47 @@ async function handleMessage(phone, rawText) {
       if (workouts[key]) {
         session.state = "EXERCISE_LIST";
         session.training = key;
-        return exerciseListText(key);
+        return exerciseListText(key, weekNumber);
       }
 
-      // Uma resposta negativa à saudação encerra e registra o dia sem treino,
-      // seja porque era dia de descanso ou porque o treino programado foi pulado.
+      // "oi", "olá" etc sempre mostram a saudação completa
+      if (["oi", "ola", "olá"].includes(lower)) {
+        resetSession(phone);
+        return greetingText();
+      }
+
+      const diaKey = diaDeHoje();
+      const trainingKeyHoje = agenda[diaKey];
+
+      // Resposta afirmativa: confirma o treino sugerido (ou libera a escolha, em dia de descanso)
+      if (["sim", "s"].includes(lower)) {
+        if (trainingKeyHoje) {
+          session.state = "EXERCISE_LIST";
+          session.training = trainingKeyHoje;
+          return exerciseListText(trainingKeyHoje, weekNumber);
+        }
+        return trainingListOnlyText();
+      }
+
+      // Resposta negativa: encerra e registra o dia sem treino
       if (["nao", "não", "n"].includes(lower)) {
-        const diaKey = diaDeHoje();
-        const trainingKeyHoje = agenda[diaKey];
         const now = new Date();
         const dataStr = now.toLocaleDateString("pt-BR");
         const horaStr = now.toLocaleTimeString("pt-BR");
 
         if (trainingKeyHoje) {
-          // Era dia de treino programado, mas não foi realizado
           const nomeTreino = workouts[trainingKeyHoje].nome;
           await appendSet(weekLabel, [dataStr, horaStr, nomeTreino, "Não realizado", "-", "-", "-", "-"]);
           resetSession(phone);
           return "Tudo bem, Raquel! Vou registrar que o treino de hoje não foi realizado. Nos vemos no próximo! 💪";
         }
 
-        // Era dia de descanso mesmo
         await appendSet(weekLabel, [dataStr, horaStr, "Descanso", "-", "-", "-", "-", "-"]);
         resetSession(phone);
         return "Ok! Sem treinos hoje, vamos descansar. Vejo você amanhã! 💤";
       }
 
-      // Qualquer outra mensagem não reconhecida no início da conversa vira uma saudação,
-      // em vez de um "não entendi" seco.
+      // Qualquer outra mensagem não reconhecida no início da conversa vira uma saudação
       return greetingText();
     }
 
@@ -202,8 +278,23 @@ async function handleMessage(phone, rawText) {
       if (!isNaN(num) && num >= 1 && num <= t.exercicios.length) {
         session.state = "LOGGING_SET";
         session.exerciseIndex = num - 1;
+        session.exerciseLoads = [];
         const ex = t.exercicios[num - 1];
+
+        let lembrete = "";
+        try {
+          const ultima = await getLastLoadForExercise(ex.nome);
+          if (ultima) {
+            lembrete =
+              `📈 Na última vez (${ultima.data}), sua ${ultima.tipo} nesse exercício foi *${ultima.carga}* ` +
+              `(${ultima.reps} reps). Bora tentar progredir a partir daí?\n\n`;
+          }
+        } catch (err) {
+          console.error("Erro ao buscar última carga:", err.message);
+        }
+
         return (
+          lembrete +
           `✏️ Registrando: *${ex.nome}* (${ex.reps} reps)\n\n` +
           "Envie os dados da série no formato:\n" +
           "`<tipo> <reps> <carga> <falhou?>`\n" +
@@ -218,7 +309,7 @@ async function handleMessage(phone, rawText) {
       if (lower === "proximo" || lower === "próximo") {
         session.state = "EXERCISE_LIST";
         session.exerciseIndex = null;
-        return exerciseListText(session.training);
+        return exerciseListText(session.training, weekNumber);
       }
 
       const parsed = parseSetMessage(text);
@@ -233,26 +324,37 @@ async function handleMessage(phone, rawText) {
 
       const t = workouts[session.training];
       const ex = t.exercicios[session.exerciseIndex];
-      const now = new Date();
-      const dataStr = now.toLocaleDateString("pt-BR");
-      const horaStr = now.toLocaleTimeString("pt-BR");
+      const cargaNum = extractNumeric(parsed.carga);
 
-      await appendSet(weekLabel, [
-        dataStr,
-        horaStr,
-        t.nome,
-        ex.nome,
-        parsed.tipo,
-        parsed.reps,
-        parsed.carga,
-        parsed.falhou,
-      ]);
+      // Checa se a carga caiu em relação à maior carga já registrada neste exercício hoje
+      if (parsed.tipo !== "Warm-up" && cargaNum !== null && session.exerciseLoads.length > 0) {
+        const maxCarga = Math.max(...session.exerciseLoads.map((l) => l.carga));
+        if (cargaNum < maxCarga) {
+          session.pendingSet = { t, ex, parsed, cargaNum };
+          session.state = "PENDING_LOAD_CONFIRM";
+          return (
+            `⚠️ Notei que essa carga (${parsed.carga}) é menor que a série anterior deste exercício (${maxCarga}kg). ` +
+            "A ideia é progredir a carga até a top-set. Está correto mesmo assim? (sim/nao)"
+          );
+        }
+      }
 
-      return (
-        `✅ Registrado: *${ex.nome}*\n` +
-        `${parsed.tipo} | ${parsed.reps} reps | ${parsed.carga} | Falhou: ${parsed.falhou}\n\n` +
-        "Pode enviar a próxima série, ou *proximo* para o próximo exercício, ou *fim* para encerrar."
-      );
+      return saveSet(session, weekLabel, t, ex, parsed, cargaNum);
+    }
+
+    case "PENDING_LOAD_CONFIRM": {
+      if (["sim", "s"].includes(lower)) {
+        const { t, ex, parsed, cargaNum } = session.pendingSet;
+        session.pendingSet = null;
+        session.state = "LOGGING_SET";
+        return saveSet(session, weekLabel, t, ex, parsed, cargaNum);
+      }
+      if (["nao", "não", "n"].includes(lower)) {
+        session.pendingSet = null;
+        session.state = "LOGGING_SET";
+        return "Sem problemas! Envie novamente a série com a carga correta.";
+      }
+      return "Não entendi 🤔. A carga está correta mesmo sendo menor que a anterior? Responda *sim* ou *nao*.";
     }
 
     case "CARDIO_ASK": {
