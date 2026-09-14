@@ -22,7 +22,7 @@ Você conversa normalmente com um número de WhatsApp. O servidor recebe a mensa
 
 **Planilha atualizada:**
 
-![Planilha do Google Sheets](./planilha-atualizada.jpg)
+![Planilha do Google Sheets](./docs/screenshots/planilha-atualizada.jpg)
 
 ## Estrutura do projeto
 
