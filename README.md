@@ -20,6 +20,10 @@ Você conversa normalmente com um número de WhatsApp. O servidor recebe a mensa
 |---|---|---|
 | ![Saudação e escolha do treino](./docs/screenshots/saudacao-escolha-treino.jpeg) | ![Lista de exercícios](./docs/screenshots/lista-exercicios.jpeg) | ![Lembrete de carga e registro](./docs/screenshots/lembrete-carga-registro.jpeg) |
 
+**Planilha atualizada:**
+
+![Planilha do Google Sheets](./docs/screenshots/planilha-atualizada.jpeg)
+
 ## Estrutura do projeto
 
 ```
